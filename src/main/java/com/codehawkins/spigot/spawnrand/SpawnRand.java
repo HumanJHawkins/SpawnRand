@@ -9,6 +9,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.spigotmc.event.player.PlayerSpawnLocationEvent;
 
@@ -43,27 +44,82 @@ public final class SpawnRand extends JavaPlugin implements Listener {
     @EventHandler
     public void onPlayerSpawnLocationEvent(PlayerSpawnLocationEvent event) throws IOException {
         theWorld = event.getSpawnLocation().getWorld();
-        if (validateConfig()) {
-            Player thePlayer = event.getPlayer();
-            String playerUUID = thePlayer.getUniqueId().toString();
-            if (playerData.isConfigurationSection(playerUUID)) {
-                theLocation = new Location(theWorld
-                        , playerData.getInt(playerUUID + ".x")
-                        , playerData.getInt(playerUUID + ".y")
-                        , playerData.getInt(playerUUID + ".z"));
-            } else {
-                do { randomizeLocation(); } while (!locationIsSafe());
-                savePlayerData(thePlayer);
-            }
+        if (!validateConfig()) {
+            return;
+        }
+
+        Player thePlayer = event.getPlayer();
+        String playerUUID = thePlayer.getUniqueId().toString();
+        boolean isNewPlayer = !thePlayer.hasPlayedBefore();
+        boolean hasLocationConfig = playerData.isConfigurationSection(playerUUID);
+
+        boolean overrideSpawn = false;
+        if (hasLocationConfig) {
+            overrideSpawn = getOverrideWorldSpawn(playerUUID);
+        }
+
+        if (isNewPlayer && !hasLocationConfig) {
+            do {
+                randomizeLocation();
+            } while (!locationIsSafe());
             event.setSpawnLocation(theLocation);
-        } else {
-            System.out.print("Error: Config is invalid in Spawnrand.onPlayerSpawnLocationEvent(...)");
+            setPlayerData(thePlayer);
+        } else if (thePlayer.getBedSpawnLocation() == null && overrideSpawn) {
+            theLocation = new Location(theWorld
+                    , playerData.getInt(playerUUID + ".x")
+                    , playerData.getInt(playerUUID + ".y")
+                    , playerData.getInt(playerUUID + ".z"));
+            event.setSpawnLocation(theLocation);
+            setPlayerData(thePlayer);
+        }
+        saveOverrideWorldSpawn(thePlayer,false);   // saves all config data
+    }
+
+//    @EventHandler
+//    public void onPlayerJoinEvent(PlayerJoinEvent event) throws IOException {
+//    }
+//
+//    @EventHandler
+//    public void onPlayerChangedWorldEvent(PlayerChangedWorldEvent event) throws IOException {
+//    }
+
+//    @EventHandler
+//    public void onPlayerRespawnEvent(PlayerRespawnEvent event) throws IOException {
+//        setPlayerSpawn(true);
+//    }
+
+//    @EventHandler
+//    public void onPlayerQuitEvent(PlayerQuitEvent event) throws IOException {
+//    }
+//
+//    @EventHandler
+//    public void onPlayerKickEvent(PlayerKickEvent event) throws IOException {
+//    }
+
+    @EventHandler
+    public void onPlayerDeathEvent(PlayerDeathEvent event) throws IOException {
+        Player thePlayer = event.getEntity().getPlayer();
+        if (thePlayer != null) {
+            saveOverrideWorldSpawn(event.getEntity().getPlayer(), true);
         }
     }
 
-    // public FileConfiguration getPlayerData() {
-    //     return this.playerData;
-    // }
+    private void saveOverrideWorldSpawn(Player thePlayer, boolean doOverride) throws IOException {
+        String playerUUID = thePlayer.getUniqueId().toString();
+        createPlayerSection(playerUUID);
+        playerData.set(playerUUID + ".overrideWorldSpawn", doOverride);
+        playerData.save(playerDataFile);
+    }
+
+    private boolean getOverrideWorldSpawn(String playerUUID) {
+        return playerData.getBoolean(playerUUID + ".overrideWorldSpawn");
+    }
+
+    private void createPlayerSection(String playerUUID) {
+        if (!playerData.isConfigurationSection(playerUUID)) {
+            playerData.createSection(playerUUID);
+        }
+    }
 
     private void createPlayerData() {
         // https://www.spigotmc.org/wiki/config-files/
@@ -81,9 +137,9 @@ public final class SpawnRand extends JavaPlugin implements Listener {
         }
     }
 
-    private void savePlayerData(Player thePlayer) throws IOException {
+    private void setPlayerData(Player thePlayer) {
         String playerUUID = thePlayer.getUniqueId().toString();
-        playerData.createSection(playerUUID);
+        createPlayerSection(playerUUID);
         playerData.set(playerUUID + ".name", thePlayer.getName());
         playerData.set(playerUUID + ".standingOn",
                 theWorld.getBlockAt(
@@ -93,7 +149,15 @@ public final class SpawnRand extends JavaPlugin implements Listener {
         playerData.set(playerUUID + ".x", theLocation.getBlockX());
         playerData.set(playerUUID + ".y", theLocation.getBlockY());
         playerData.set(playerUUID + ".z", theLocation.getBlockZ());
-        playerData.save(playerDataFile);
+        if (thePlayer.getBedSpawnLocation() == null) {
+            playerData.set(playerUUID + ".bedSpawnLocation", "null");
+        } else {
+            playerData.set(playerUUID + ".bedSpawnLocation", ""
+                    + thePlayer.getBedSpawnLocation().getBlockX() + "_"
+                    + thePlayer.getBedSpawnLocation().getBlockY() + "_"
+                    + thePlayer.getBedSpawnLocation().getBlockZ()
+            );
+        }
     }
 
     private void updateConfig() {
@@ -106,7 +170,9 @@ public final class SpawnRand extends JavaPlugin implements Listener {
 
     private void randomizeLocation() {
         // Get a point within distance spec.
-        int x; int z; double distance;
+        int x;
+        int z;
+        double distance;
         do {
             x = randBetween(-maxDistance, maxDistance);
             z = randBetween(-maxDistance, maxDistance);
