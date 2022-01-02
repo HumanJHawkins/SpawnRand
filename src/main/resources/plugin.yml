@@ -1,0 +1,7 @@
+name: SpawnRand
+version: '${project.version}'
+main: com.codehawkins.spigot.spawnrand.SpawnRand
+api-version: 1.18
+authors: [ JeffHawkins ]
+description: A lightweight mod for randomizing initial spawn location.
+website: codehawkins.com

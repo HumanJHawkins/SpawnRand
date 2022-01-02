@@ -1,0 +1,20 @@
+# Locations are found using rejection sampling, as follows:
+#   - A location is randomly picked within a square with sides maxDistance from center of range.
+#   - Locations not within maxRange actual distance (i.e. at the corners) are rejected.
+#   - Locations closer than minDistance to center are rejected.
+#   - Locations known to be unsafe for spawn are rejected.
+#
+# To insure good performance under this design, maxDistance must be 100 or greater, and minDistance must be
+#  less than 80% of maxDistance. Finally, all potential spawn locations must be within the world border.
+#  Values outside of these requirements will be automatically adjusted.
+Spawnrand:
+  centerX: 0
+  centerZ: 0
+  minDistance: 250
+  maxDistance: 1250
+  dangerBlock:
+    - "LAVA"
+    - "WATER"
+    - "CACTUS"
+    - "COBWEB"
+
