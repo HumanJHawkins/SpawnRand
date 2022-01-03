@@ -7,7 +7,7 @@
 # To insure good performance under this design, maxDistance must be 100 or greater, and minDistance must be
 #  less than 80% of maxDistance. Finally, all potential spawn locations must be within the world border.
 #  Values outside of these requirements will be automatically adjusted.
-Spawnrand:
+SpawnRand:
   centerX: 0
   centerZ: 0
   minDistance: 250
