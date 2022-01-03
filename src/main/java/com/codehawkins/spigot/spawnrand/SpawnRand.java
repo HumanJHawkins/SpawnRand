@@ -10,6 +10,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.spigotmc.event.player.PlayerSpawnLocationEvent;
 
@@ -28,9 +29,6 @@ public final class SpawnRand extends JavaPlugin implements Listener {
     int minDistance = srConfig.getInt("Spawnrand.minDistance");
     int maxDistance = srConfig.getInt("Spawnrand.maxDistance");
 
-    private World theWorld;
-    private Location theLocation;
-
     @Override
     public void onEnable() {
         // Register events:
@@ -43,12 +41,54 @@ public final class SpawnRand extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onPlayerSpawnLocationEvent(PlayerSpawnLocationEvent event) throws IOException {
-        theWorld = event.getSpawnLocation().getWorld();
-        if (!validateConfig()) {
-            return;
-        }
+        Location theLocation = event.getSpawnLocation();
+        World theWorld = theLocation.getWorld();
+        assert theWorld != null;
+        if(theWorld.getEnvironment() == World.Environment.THE_END) { return; }
 
         Player thePlayer = event.getPlayer();
+        event.setSpawnLocation(curateLocation(theWorld, theLocation, thePlayer));
+    }
+
+    @EventHandler
+    public void onPlayerRespawnEvent(PlayerRespawnEvent event) throws IOException {
+        Player thePlayer = event.getPlayer();
+        saveOverrideSpawnLocation(thePlayer, true);  // Always for respawn event.
+
+        Location theLocation = event.getRespawnLocation();
+        World theWorld = theLocation.getWorld();
+        assert theWorld != null;
+        if(theWorld.getEnvironment() == World.Environment.THE_END) { return; }
+
+        event.setRespawnLocation(curateLocation(theWorld, theLocation, thePlayer));
+    }
+
+    @EventHandler
+    public void onPlayerDeathEvent(PlayerDeathEvent event) throws IOException {
+        Player thePlayer = event.getEntity().getPlayer();
+        assert thePlayer != null;
+        saveOverrideSpawnLocation(thePlayer, true);
+    }
+
+//    @EventHandler
+//    public void onPlayerJoinEvent(PlayerJoinEvent event) throws IOException {
+//    }
+//
+//    @EventHandler
+//    public void onPlayerChangedWorldEvent(PlayerChangedWorldEvent event) throws IOException {
+//    }
+//
+//    @EventHandler
+//    public void onPlayerQuitEvent(PlayerQuitEvent event) throws IOException {
+//    }
+//
+//    @EventHandler
+//    public void onPlayerKickEvent(PlayerKickEvent event) throws IOException {
+//    }
+
+
+    private Location curateLocation(World theWorld, Location theLocation, Player thePlayer) throws IOException {
+        validateConfig(theWorld);
         String playerUUID = thePlayer.getUniqueId().toString();
         boolean isNewPlayer = !thePlayer.hasPlayedBefore();
         boolean hasLocationConfig = playerData.isConfigurationSection(playerUUID);
@@ -60,51 +100,21 @@ public final class SpawnRand extends JavaPlugin implements Listener {
 
         if (isNewPlayer && !hasLocationConfig) {
             do {
-                randomizeLocation();
-            } while (!locationIsSafe());
-            event.setSpawnLocation(theLocation);
-            setPlayerData(thePlayer);
+                theLocation = randomizeLocation(theWorld);
+            } while (!locationIsSafe(theWorld, theLocation));
+            setPlayerData(theWorld, theLocation, thePlayer);
         } else if (thePlayer.getBedSpawnLocation() == null && overrideSpawn) {
             theLocation = new Location(theWorld
                     , playerData.getInt(playerUUID + ".x")
                     , playerData.getInt(playerUUID + ".y")
                     , playerData.getInt(playerUUID + ".z"));
-            event.setSpawnLocation(theLocation);
-            setPlayerData(thePlayer);
         }
-        saveOverrideWorldSpawn(thePlayer,false);   // saves all config data
+
+        saveOverrideSpawnLocation(thePlayer,false);   // saves all config data
+        return theLocation;
     }
 
-//    @EventHandler
-//    public void onPlayerJoinEvent(PlayerJoinEvent event) throws IOException {
-//    }
-//
-//    @EventHandler
-//    public void onPlayerChangedWorldEvent(PlayerChangedWorldEvent event) throws IOException {
-//    }
-
-//    @EventHandler
-//    public void onPlayerRespawnEvent(PlayerRespawnEvent event) throws IOException {
-//        setPlayerSpawn(true);
-//    }
-
-//    @EventHandler
-//    public void onPlayerQuitEvent(PlayerQuitEvent event) throws IOException {
-//    }
-//
-//    @EventHandler
-//    public void onPlayerKickEvent(PlayerKickEvent event) throws IOException {
-//    }
-
-    @EventHandler
-    public void onPlayerDeathEvent(PlayerDeathEvent event) throws IOException {
-        Player thePlayer = event.getEntity().getPlayer();
-        if (thePlayer != null) {
-            saveOverrideWorldSpawn(event.getEntity().getPlayer(), true);
-        }
-    }
-
-    private void saveOverrideWorldSpawn(Player thePlayer, boolean doOverride) throws IOException {
+    private void saveOverrideSpawnLocation(Player thePlayer, boolean doOverride) throws IOException {
         String playerUUID = thePlayer.getUniqueId().toString();
         createPlayerSection(playerUUID);
         playerData.set(playerUUID + ".overrideWorldSpawn", doOverride);
@@ -137,7 +147,7 @@ public final class SpawnRand extends JavaPlugin implements Listener {
         }
     }
 
-    private void setPlayerData(Player thePlayer) {
+    private void setPlayerData(World theWorld, Location theLocation, Player thePlayer) {
         String playerUUID = thePlayer.getUniqueId().toString();
         createPlayerSection(playerUUID);
         playerData.set(playerUUID + ".name", thePlayer.getName());
@@ -168,7 +178,7 @@ public final class SpawnRand extends JavaPlugin implements Listener {
         saveConfig();
     }
 
-    private void randomizeLocation() {
+    private Location randomizeLocation(World theWorld) {
         // Get a point within distance spec.
         int x;
         int z;
@@ -182,10 +192,10 @@ public final class SpawnRand extends JavaPlugin implements Listener {
         // Apply the center offset.
         x += centerX;
         z += centerZ;
-        theLocation = new Location(theWorld, x, theWorld.getHighestBlockAt(x, z).getY() + 1, z);
+        return new Location(theWorld, x, theWorld.getHighestBlockAt(x, z).getY() + 1, z);
     }
 
-    private boolean locationIsSafe() {
+    private boolean locationIsSafe(World theWorld, Location theLocation) {
         Block blockUnder = theWorld.getBlockAt(theLocation.getBlockX(), theLocation.getBlockY() - 1, theLocation.getBlockZ());
         Block blockHead = theWorld.getBlockAt(theLocation.getBlockX(), theLocation.getBlockY() + 1, theLocation.getBlockZ());
         List<String> dangerBlock = getConfig().getStringList("dangerBlock");
@@ -203,15 +213,11 @@ public final class SpawnRand extends JavaPlugin implements Listener {
         return random.nextInt(range) + min;
     }
 
-    private boolean validateConfig() {
+    private void validateConfig(World theWorld) {
         boolean isModified = false;
 
         int worldRadius = (int) (theWorld.getWorldBorder().getSize() / 2);
         int larger = Math.max(centerX, centerZ);
-
-        if (worldRadius < 500) {
-            return false;
-        }
 
         if (maxDistance < 100) {
             isModified = true;
@@ -239,6 +245,5 @@ public final class SpawnRand extends JavaPlugin implements Listener {
         if (isModified) {
             updateConfig();
         }
-        return true;
     }
 }
